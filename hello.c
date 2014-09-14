@@ -5,6 +5,7 @@
 #include <asm/uaccess.h>
 #include <linux/slab.h>
 #include <linux/errno.h>
+#include <linux/gpio.h>
 
 #define HELLO_MAJOR	0
 #define HELLO_MINOR	0
@@ -67,10 +68,10 @@ static int hello_open(struct inode *inode, struct file *filp){
 	}
 	if(filp->f_flags & O_APPEND)
 		printk(KERN_ALERT "APPEND flag set.\n");
-
-	if(minor == 0) this_dev->invert = 0;
-	else this_dev->invert = 1;
-
+	if(minor)
+		this_dev->invert = 1;
+	else
+		this_dev->invert = 0;
 	return 0;
 }
 static int hello_release(struct inode *inode, struct file *filp){
@@ -213,6 +214,7 @@ static int hello_init(void)
 	for(i=0;i<HELLO_DATA_SIZE;i++)
 		my_hello_dev.hello_data[i] = 0;
 	printk(KERN_ALERT "Hello, world. Major: %i\n", MAJOR(my_dev));
+
 	return 0;
 }
 static void hello_exit(void)
