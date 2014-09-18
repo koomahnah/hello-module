@@ -9,8 +9,7 @@
 #define HELLO_MAJOR	0
 #define HELLO_MINOR	0
 #define HELLO_DEVICES	2
-#define HELLO_DATA_SIZE	50
-#define HELLO_NODE_SIZE	4
+#define HELLO_NODE_SIZE	1024
 
 MODULE_LICENSE("Dual BSD/GPL");
 
@@ -128,7 +127,7 @@ static int hello_read(struct file *f, char __user *u, size_t s, loff_t *f_pos){
 	for(sp=s;sp>0;node++){
 		for(i=0;i<HELLO_NODE_SIZE;i++){
 			buf[i+(node*HELLO_NODE_SIZE)] = pnode->data[i];
-			printk(KERN_ALERT "Written %c at buf[%i]", pnode->data[i], i+(node*HELLO_NODE_SIZE));
+//			printk(KERN_ALERT "Written %c at buf[%i]", pnode->data[i], i+(node*HELLO_NODE_SIZE));
 		}
 		if(pnode->next == NULL) break;
 		pnode = pnode->next;
@@ -160,48 +159,48 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 	printk(KERN_ALERT "Hello_write, size_t: %i, major: %i, minor: %i, offset given: %lld, internal offset: %lld", s, imajor(f->f_inode), iminor(f->f_inode), *f_pos, f->f_pos);
 
 	if(f->f_flags & O_APPEND){
-		printk(KERN_ALERT "APPEND flag set. f_pos is now %i\n", this_dev->size);
+		//printk(KERN_ALERT "APPEND flag set. f_pos is now %i\n", this_dev->size);
 		*f_pos = this_dev->size;
 	}
 	if(*f_pos > this_dev->size)
 		return -EFBIG;
 	buf = kmalloc(s, GFP_KERNEL);
-	printk(KERN_ALERT "Copying, size %i\n", s);
+	//printk(KERN_ALERT "Copying, size %i\n", s);
 	if(copy_from_user(buf, u, s)!=0){
-		printk(KERN_ALERT "Hello_write, copying failure.\n");
+		//printk(KERN_ALERT "Hello_write, copying failure.\n");
 		kfree(buf);
 		return -EFAULT;
 	}
 	off = *f_pos % HELLO_NODE_SIZE;
 	nodes_skip = (int)(*f_pos) / HELLO_NODE_SIZE;
-	printk(KERN_ALERT "Offset is %lld, nodes to skip: %i", off, nodes_skip);
+	//printk(KERN_ALERT "Offset is %lld, nodes to skip: %i", off, nodes_skip);
 	for(i=0;i<nodes_skip;i++){
 		if(pnode->next == NULL){
 			hello_list_extend(pnode);
-			printk(KERN_ALERT "List extended.");
+			//printk(KERN_ALERT "List extended.");
 		}
-		printk(KERN_ALERT "List rewinded.");
+		//printk(KERN_ALERT "List rewinded.");
 		pnode = pnode->next;
 	}
 	while(s>0){
 		stop = ((int)s + (int)off) < HELLO_NODE_SIZE ? ((int)s + (int)off): HELLO_NODE_SIZE;
-		printk(KERN_ALERT "Loop start: s is %i, stop is %i, off is %lld", (int)s, stop, off);
+		//printk(KERN_ALERT "Loop start: s is %i, stop is %i, off is %lld", (int)s, stop, off);
 		for(i=(int)off;i<stop;i++){
 			pnode->data[i] = buf[s_save - (int)s - (int)off + i];
-			printk(KERN_ALERT "%i. I would use buf[%i].", i, s_save - (int)s - (int)off + i);
-			printk(KERN_ALERT "%i. Writing '%c'(buf), '%c'(list)", i, buf[s_save - (int)s - (int)off + i], pnode->data[i]);
+			//printk(KERN_ALERT "%i. I would use buf[%i].", i, s_save - (int)s - (int)off + i);
+			//printk(KERN_ALERT "%i. Writing '%c'(buf), '%c'(list)", i, buf[s_save - (int)s - (int)off + i], pnode->data[i]);
 		}
 		if(stop == HELLO_NODE_SIZE){
-			printk(KERN_ALERT "List extended and rewinded, kurwa.");
+			//printk(KERN_ALERT "List extended and rewinded, kurwa.");
 			hello_list_extend(pnode);
 			pnode = pnode->next;
 		}
-		printk(KERN_ALERT "Succesfully written %i bytes.", stop - (int)off);
+		//printk(KERN_ALERT "Succesfully written %i bytes.", stop - (int)off);
 		s -= stop - (int)off;
 		off = 0;
 	}
-	printk(KERN_ALERT "By this_dev->root: data[0]: %c, data[1]: %c", this_dev->root.data[0], this_dev->root.data[1]);
-	printk(KERN_ALERT "By pnode: data[0]: %c, data[1]: %c", pnode->data[0], pnode->data[1]);
+	//printk(KERN_ALERT "By this_dev->root: data[0]: %c, data[1]: %c", this_dev->root.data[0], this_dev->root.data[1]);
+	//printk(KERN_ALERT "By pnode: data[0]: %c, data[1]: %c", pnode->data[0], pnode->data[1]);
 
 
 	*f_pos += s_save;
@@ -216,17 +215,17 @@ static loff_t hello_llseek(struct file *f, loff_t l, int whence){
 	struct hello_dev *this_dev = f->private_data;
 	switch(whence){
 	case SEEK_SET:
-		if(l >= HELLO_DATA_SIZE)
+		if(l >= this_dev->size)
 			return -1;
 		f->f_pos=l;
 		break;
 	case SEEK_CUR:
-		if(f->f_pos + l >= HELLO_DATA_SIZE)
+		if(f->f_pos + l >= this_dev->size)
 			return -1;
 		f->f_pos+=l;
 		break;
 	case SEEK_END:
-		if(l+this_dev->size>=HELLO_DATA_SIZE)
+		if(l+this_dev->size>=this_dev->size)
 			return -1;
 		else f->f_pos = l + this_dev->size;
 		break;
