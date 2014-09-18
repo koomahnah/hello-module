@@ -58,6 +58,7 @@ struct hello_dev{
 	struct hello_node root;
 	int size;
 	int invert;
+	unsigned long long _written;
 };
 
 static struct hello_dev my_hello_dev;
@@ -85,6 +86,7 @@ static int hello_open(struct inode *inode, struct file *filp){
 	unsigned int major = imajor(inode);
 	unsigned int minor = iminor(inode);
 	filp->private_data = this_dev;
+	this_dev->_written = 0;
 	printk(KERN_ALERT "Whoaa, opened! Major %i, minor %i.\n", major, minor);
 	if(filp->f_flags & O_RDWR)
 		printk(KERN_ALERT "RDWR flag set.\n");
@@ -100,7 +102,7 @@ static int hello_open(struct inode *inode, struct file *filp){
 	return 0;
 }
 static int hello_release(struct inode *inode, struct file *filp){
-	printk(KERN_ALERT "Whooo... released.\n");
+	printk(KERN_ALERT "Whooo... released. Written %llu since open.\n", my_hello_dev->_written);
 	return 0;
 }
 
@@ -158,7 +160,7 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 	const int s_save = s < MAX_WRITE_SIZE ? s : MAX_WRITE_SIZE;
 	s = s_save;
 
-	printk(KERN_ALERT "Hello_write, size_t: %i, major: %i, minor: %i, offset given: %lld, internal offset: %lld", s, imajor(f->f_inode), iminor(f->f_inode), *f_pos, f->f_pos);
+//	printk(KERN_ALERT "Hello_write, size_t: %i, major: %i, minor: %i, offset given: %lld, internal offset: %lld", s, imajor(f->f_inode), iminor(f->f_inode), *f_pos, f->f_pos);
 
 	if(f->f_flags & O_APPEND){
 		//printk(KERN_ALERT "APPEND flag set. f_pos is now %i\n", this_dev->size);
@@ -208,7 +210,8 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 	*f_pos += s_save;
 	this_dev->size = *f_pos;
 	kfree(buf);
-	printk(KERN_ALERT "Hello_write, written %i, given f_pos now is %lld, internal f_pos is %lld, bye!\n", s_save, *f_pos, f->f_pos);
+//	printk(KERN_ALERT "Hello_write, written %i, given f_pos now is %lld, internal f_pos is %lld, bye!\n", s_save, *f_pos, f->f_pos);
+	this_dev->_written += s_save;
 	return s_save;
 }
 
