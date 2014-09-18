@@ -31,8 +31,13 @@ struct hello_node{
 };
 
 struct hello_node* hello_list_extend(struct hello_node *pnode){
-	struct hello_node *new_node = (struct hello_node*) kmalloc(sizeof(struct hello_node), GFP_KERNEL);
+	struct hello_node *new_node;
 	int i;
+	if(pnode->next != NULL){
+		printk(KERN_ALERT "Trying to extend already extended. Nothing done.");
+		return NULL;
+	}
+	new_node = (struct hello_node*) kmalloc(sizeof(struct hello_node), GFP_KERNEL);
 	if(new_node == NULL) return NULL;
 	pnode->next = new_node;
 	new_node->prev = pnode;
@@ -51,6 +56,7 @@ void hello_list_trunc(struct hello_node *pnode){
 		tmpnode = tmpnode->prev;
 		kfree(tmpnode->next);
 	}
+	pnode->next = NULL;
 }
 
 struct hello_dev{
@@ -92,6 +98,8 @@ static int hello_open(struct inode *inode, struct file *filp){
 		printk(KERN_ALERT "RDWR flag set.\n");
 	if(filp->f_flags & O_TRUNC){
 		printk(KERN_ALERT "TRUNC flag set.\n");
+		hello_list_trunc(&this_dev->root);
+		this_dev->size = 0;
 	}
 	if(filp->f_flags & O_APPEND)
 		printk(KERN_ALERT "APPEND flag set.\n");
@@ -102,7 +110,7 @@ static int hello_open(struct inode *inode, struct file *filp){
 	return 0;
 }
 static int hello_release(struct inode *inode, struct file *filp){
-	printk(KERN_ALERT "Whooo... released. Written %llu since open.\n", my_hello_dev->_written);
+	printk(KERN_ALERT "Whooo... released. Written %llu since open.\n", my_hello_dev._written);
 	return 0;
 }
 
@@ -151,7 +159,7 @@ static int hello_read(struct file *f, char __user *u, size_t s, loff_t *f_pos){
 
 static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_t *f_pos){
 	loff_t off;
-	int nodes_skip; 
+	loff_t nodes_skip; 
 	char *buf;
 	struct hello_dev *this_dev = f->private_data;
 	int i;
@@ -171,19 +179,19 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 	buf = kmalloc(s, GFP_KERNEL);
 	//printk(KERN_ALERT "Copying, size %i\n", s);
 	if(copy_from_user(buf, u, s)!=0){
-		//printk(KERN_ALERT "Hello_write, copying failure.\n");
+		printk(KERN_ALERT "Hello_write, copying failure.\n");
 		kfree(buf);
 		return -EFAULT;
 	}
 	off = *f_pos % HELLO_NODE_SIZE;
-	nodes_skip = (int)(*f_pos) / HELLO_NODE_SIZE;
+	nodes_skip = *f_pos / HELLO_NODE_SIZE;
 	//printk(KERN_ALERT "Offset is %lld, nodes to skip: %i", off, nodes_skip);
 	for(i=0;i<nodes_skip;i++){
 		if(pnode->next == NULL){
 			hello_list_extend(pnode);
-			//printk(KERN_ALERT "List extended.");
+//			printk(KERN_ALERT "List extended.");
 		}
-		//printk(KERN_ALERT "List rewinded.");
+//		printk(KERN_ALERT "List rewinded.");
 		pnode = pnode->next;
 	}
 	while(s>0){
@@ -199,7 +207,7 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 			hello_list_extend(pnode);
 			pnode = pnode->next;
 		}
-		//printk(KERN_ALERT "Succesfully written %i bytes.", stop - (int)off);
+//		printk(KERN_ALERT "Succesfully written %i bytes.", stop - (int)off);
 		s -= stop - (int)off;
 		off = 0;
 	}
