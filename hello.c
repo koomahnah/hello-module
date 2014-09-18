@@ -10,6 +10,7 @@
 #define HELLO_MINOR	0
 #define HELLO_DEVICES	2
 #define HELLO_NODE_SIZE	1024
+#define MAX_WRITE_SIZE	128*1024
 
 MODULE_LICENSE("Dual BSD/GPL");
 
@@ -154,7 +155,8 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 	int i;
 	int stop;
 	struct hello_node *pnode = &(this_dev->root);
-	const int s_save = s;
+	const int s_save = s < MAX_WRITE_SIZE ? s : MAX_WRITE_SIZE;
+	s = s_save;
 
 	printk(KERN_ALERT "Hello_write, size_t: %i, major: %i, minor: %i, offset given: %lld, internal offset: %lld", s, imajor(f->f_inode), iminor(f->f_inode), *f_pos, f->f_pos);
 
@@ -262,6 +264,7 @@ static int hello_init(void)
 }
 static void hello_exit(void)
 {
+	hello_list_trunc(&my_hello_dev.root);
 	cdev_del(&(my_hello_dev.cdev));
 	unregister_chrdev_region(my_dev, 2);
 	printk(KERN_ALERT "Goodbye, cruel world\n");
