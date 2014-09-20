@@ -23,6 +23,7 @@ static int hello_release(struct inode *inode, struct file *filp);
 static int hello_read(struct file *f, char __user *u, size_t s, loff_t *l);
 static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_t *t);
 static loff_t hello_llseek(struct file *f, loff_t l, int i);
+static int hello_extends = 0;
 
 struct hello_node{
 	char data[HELLO_NODE_SIZE];
@@ -33,6 +34,7 @@ struct hello_node{
 struct hello_node* hello_list_extend(struct hello_node *pnode){
 	struct hello_node *new_node;
 	int i;
+	hello_extends++;
 	if(pnode->next != NULL){
 		printk(KERN_ALERT "Trying to extend already extended. Nothing done.");
 		return NULL;
@@ -50,12 +52,15 @@ struct hello_node* hello_list_extend(struct hello_node *pnode){
 // removes everything that's after pnode
 void hello_list_trunc(struct hello_node *pnode){
 	struct hello_node *tmpnode = pnode;
+	int freed = 0;
 	while(tmpnode->next != NULL)
 		tmpnode = tmpnode->next;
 	while(tmpnode != pnode){
 		tmpnode = tmpnode->prev;
+		freed++;
 		kfree(tmpnode->next);
 	}
+	printk(KERN_ALERT "Hello_list_trunc, %i nodes freed.", freed);
 	pnode->next = NULL;
 }
 
@@ -65,6 +70,7 @@ struct hello_dev{
 	int size;
 	int invert;
 	unsigned long long _written;
+	int _new_nodes;
 };
 
 static struct hello_dev my_hello_dev;
@@ -93,7 +99,9 @@ static int hello_open(struct inode *inode, struct file *filp){
 	unsigned int minor = iminor(inode);
 	filp->private_data = this_dev;
 	this_dev->_written = 0;
+	this_dev->_new_nodes = 0;
 	printk(KERN_ALERT "Whoaa, opened! Major %i, minor %i.\n", major, minor);
+	printk(KERN_ALERT "Size of struct hello_node is %i. Just saying", sizeof(struct hello_node));
 	if(filp->f_flags & O_RDWR)
 		printk(KERN_ALERT "RDWR flag set.\n");
 	if(filp->f_flags & O_TRUNC){
@@ -110,17 +118,17 @@ static int hello_open(struct inode *inode, struct file *filp){
 	return 0;
 }
 static int hello_release(struct inode *inode, struct file *filp){
-	printk(KERN_ALERT "Whooo... released. Written %llu since open.\n", my_hello_dev._written);
+	printk(KERN_ALERT "Whooo... released. Written %llu since open. %i new nodes. List extends: %i\n", my_hello_dev._written, my_hello_dev._new_nodes, hello_extends);
 	return 0;
 }
 
 static int hello_read(struct file *f, char __user *u, size_t s, loff_t *f_pos){
-	char *buf = kmalloc(s, GFP_KERNEL);
+	char *buf;
 	struct hello_dev *this_dev = f->private_data;
-	int i;
-	int node;
 	struct hello_node *pnode = &(this_dev->root);
-	size_t sp;
+	size_t s_save;
+	loff_t nodes_skip, off, stop, i;
+	loff_t tmp;
 	printk(KERN_ALERT "Hello_read, size_t: %i, major: %i, minor: %i, offset: %lld\n", s, imajor(f->f_inode), iminor(f->f_inode), *f_pos);
 	if(*f_pos>this_dev->size){
 		printk(KERN_ALERT "Hello_read, looking too far, failure.\n");
@@ -131,39 +139,69 @@ static int hello_read(struct file *f, char __user *u, size_t s, loff_t *f_pos){
 		s = this_dev->size - *f_pos;
 		printk(KERN_ALERT "s became: %i", s);
 	}
-//	printk(KERN_ALERT "By this_dev->root: data[0]: %c, data[1]: %c", this_dev->root.data[0], this_dev->root.data[1]);
-//	printk(KERN_ALERT "By pnode: data[0]: %c, data[1]: %c", pnode->data[0], pnode->data[1]);
-	sp = s;
-	node = 0;
-	for(sp=s;sp>0;node++){
-		for(i=0;i<HELLO_NODE_SIZE;i++){
-			buf[i+(node*HELLO_NODE_SIZE)] = pnode->data[i];
-//			printk(KERN_ALERT "Written %c at buf[%i]", pnode->data[i], i+(node*HELLO_NODE_SIZE));
+	if(s == 0) return 0;
+	s_save = s;
+	buf = kmalloc(s, GFP_KERNEL);
+	off = *f_pos % HELLO_NODE_SIZE;
+	nodes_skip = *f_pos / HELLO_NODE_SIZE;
+	//printk(KERN_ALERT "Offset is %lld, nodes to skip: %i", off, nodes_skip);
+	for(i=0;i<nodes_skip;i++){
+		if(pnode->next == NULL){
+			printk(KERN_ALERT "Something's wrong, pnode->next points to NULL.");
+			kfree(buf);
+			return 0;
 		}
-		if(pnode->next == NULL) break;
 		pnode = pnode->next;
-		sp -= HELLO_NODE_SIZE;
 	}
-//	for(sp=0;sp<s;sp++)
-//		buf[sp] = '0';
-		
-	if(copy_to_user(u, buf, s)!=0){
+	if(this_dev->invert){	
+		while(s>0){
+			stop = ((loff_t)s + off) < HELLO_NODE_SIZE ? ((loff_t)s + off): HELLO_NODE_SIZE;
+			//printk(KERN_ALERT "Loop start: s is %i, stop is %i, off is %lld", (int)s, stop, off);
+			for(i=off;i<stop;i++){
+				buf[(int)(s-off) - i - 1] = pnode->data[i];
+				//printk(KERN_ALERT "%i. I would use buf[%i].", i, s_save - (int)s - (int)off + i);
+				//printk(KERN_ALERT "%i. Writing '%c'(buf), '%c'(list)", i, buf[s_save - (int)s - (int)off + i], pnode->data[i]);
+			}
+			if(stop == HELLO_NODE_SIZE){
+				pnode = pnode->next;
+			}
+	//		printk(KERN_ALERT "Succesfully written %i bytes.", stop - (int)off);
+			s -= (size_t)(stop - off);
+			off = 0;
+		}
+	}else{
+		while(s>0){
+			stop = ((loff_t)s + off) < HELLO_NODE_SIZE ? ((loff_t)s + off): HELLO_NODE_SIZE;
+			//printk(KERN_ALERT "Loop start: s is %i, stop is %i, off is %lld", (int)s, stop, off);
+			for(i=off;i<stop;i++){
+				buf[s_save - (int)(s-off) + i] = pnode->data[i];
+				//printk(KERN_ALERT "%i. I would use buf[%i].", i, s_save - (int)s - (int)off + i);
+				//printk(KERN_ALERT "%i. Writing '%c'(buf), '%c'(list)", i, buf[s_save - (int)s - (int)off + i], pnode->data[i]);
+			}
+			if(stop == HELLO_NODE_SIZE){
+				pnode = pnode->next;
+			}
+	//		printk(KERN_ALERT "Succesfully written %i bytes.", stop - (int)off);
+			s -= (size_t)(stop - off);
+			off = 0;
+		}
+	}
+	if(copy_to_user(u, buf, s_save)!=0){
 		printk(KERN_ALERT "Hello_read, copying failure.\n");
+		kfree(buf);
 		return -EFAULT;
 	}
-	(*f_pos)+=s;
+	(*f_pos)+=s_save;
 	printk(KERN_ALERT "Hello_read, f_pos now is %lld, bye!\n", *f_pos);
 	kfree(buf);
-	return s;
+	return s_save;
 }
 
 static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_t *f_pos){
 	loff_t off;
 	loff_t nodes_skip; 
-	char *buf;
 	struct hello_dev *this_dev = f->private_data;
-	int i;
-	int stop;
+	int min, i;
 	struct hello_node *pnode = &(this_dev->root);
 	const int s_save = s < MAX_WRITE_SIZE ? s : MAX_WRITE_SIZE;
 	s = s_save;
@@ -176,48 +214,37 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 	}
 	if(*f_pos > this_dev->size)
 		return -EFBIG;
-	buf = kmalloc(s, GFP_KERNEL);
-	//printk(KERN_ALERT "Copying, size %i\n", s);
-	if(copy_from_user(buf, u, s)!=0){
-		printk(KERN_ALERT "Hello_write, copying failure.\n");
-		kfree(buf);
-		return -EFAULT;
-	}
 	off = *f_pos % HELLO_NODE_SIZE;
 	nodes_skip = *f_pos / HELLO_NODE_SIZE;
 	//printk(KERN_ALERT "Offset is %lld, nodes to skip: %i", off, nodes_skip);
 	for(i=0;i<nodes_skip;i++){
 		if(pnode->next == NULL){
 			hello_list_extend(pnode);
+			this_dev->_new_nodes++;
 //			printk(KERN_ALERT "List extended.");
 		}
 //		printk(KERN_ALERT "List rewinded.");
 		pnode = pnode->next;
 	}
+	min = s < (HELLO_NODE_SIZE - off) ? s : (HELLO_NODE_SIZE - off);
+	copy_from_user(pnode->data + off, u, min);
+	s -= min;
 	while(s>0){
-		stop = ((int)s + (int)off) < HELLO_NODE_SIZE ? ((int)s + (int)off): HELLO_NODE_SIZE;
-		//printk(KERN_ALERT "Loop start: s is %i, stop is %i, off is %lld", (int)s, stop, off);
-		for(i=(int)off;i<stop;i++){
-			pnode->data[i] = buf[s_save - (int)s - (int)off + i];
-			//printk(KERN_ALERT "%i. I would use buf[%i].", i, s_save - (int)s - (int)off + i);
-			//printk(KERN_ALERT "%i. Writing '%c'(buf), '%c'(list)", i, buf[s_save - (int)s - (int)off + i], pnode->data[i]);
-		}
-		if(stop == HELLO_NODE_SIZE){
-			//printk(KERN_ALERT "List extended and rewinded, kurwa.");
+		if(pnode->next == NULL){
 			hello_list_extend(pnode);
-			pnode = pnode->next;
+			this_dev->_new_nodes++;
 		}
-//		printk(KERN_ALERT "Succesfully written %i bytes.", stop - (int)off);
-		s -= stop - (int)off;
-		off = 0;
+		pnode = pnode->next;
+		min = s < HELLO_NODE_SIZE ? s : HELLO_NODE_SIZE;
+		if(copy_from_user(pnode->data, u + s_save - s, min)){
+			printk(KERN_ALERT "Hello_write, copying failure.");
+			return -EFAULT;
+		}
+		s -= min;
 	}
-	//printk(KERN_ALERT "By this_dev->root: data[0]: %c, data[1]: %c", this_dev->root.data[0], this_dev->root.data[1]);
-	//printk(KERN_ALERT "By pnode: data[0]: %c, data[1]: %c", pnode->data[0], pnode->data[1]);
-
 
 	*f_pos += s_save;
 	this_dev->size = *f_pos;
-	kfree(buf);
 //	printk(KERN_ALERT "Hello_write, written %i, given f_pos now is %lld, internal f_pos is %lld, bye!\n", s_save, *f_pos, f->f_pos);
 	this_dev->_written += s_save;
 	return s_save;
