@@ -9,7 +9,7 @@
 #define HELLO_MAJOR	0
 #define HELLO_MINOR	0
 #define HELLO_DEVICES	2
-#define HELLO_NODE_SIZE	1024
+#define HELLO_NODE_SIZE	1016
 #define MAX_WRITE_SIZE	128*1024
 
 MODULE_LICENSE("Dual BSD/GPL");
@@ -39,7 +39,7 @@ struct hello_node* hello_list_extend(struct hello_node *pnode){
 		printk(KERN_ALERT "Trying to extend already extended. Nothing done.");
 		return NULL;
 	}
-	new_node = (struct hello_node*) kmalloc(sizeof(struct hello_node), GFP_KERNEL);
+	new_node = kmalloc(sizeof(struct hello_node), GFP_KERNEL);
 	if(new_node == NULL) return NULL;
 	pnode->next = new_node;
 	new_node->prev = pnode;
@@ -127,7 +127,8 @@ static int hello_read(struct file *f, char __user *u, size_t s, loff_t *f_pos){
 	struct hello_dev *this_dev = f->private_data;
 	struct hello_node *pnode = &(this_dev->root);
 	size_t s_save;
-	loff_t nodes_skip, off, stop, i;
+	loff_t stop, i;
+	int nodes_skip, off;
 	loff_t tmp;
 	printk(KERN_ALERT "Hello_read, size_t: %i, major: %i, minor: %i, offset: %lld\n", s, imajor(f->f_inode), iminor(f->f_inode), *f_pos);
 	if(*f_pos>this_dev->size){
@@ -142,8 +143,8 @@ static int hello_read(struct file *f, char __user *u, size_t s, loff_t *f_pos){
 	if(s == 0) return 0;
 	s_save = s;
 	buf = kmalloc(s, GFP_KERNEL);
-	off = *f_pos % HELLO_NODE_SIZE;
-	nodes_skip = *f_pos / HELLO_NODE_SIZE;
+	off = (int)(*f_pos) % HELLO_NODE_SIZE;
+	nodes_skip = (int)(*f_pos) / HELLO_NODE_SIZE;
 	//printk(KERN_ALERT "Offset is %lld, nodes to skip: %i", off, nodes_skip);
 	for(i=0;i<nodes_skip;i++){
 		if(pnode->next == NULL){
@@ -198,8 +199,9 @@ static int hello_read(struct file *f, char __user *u, size_t s, loff_t *f_pos){
 }
 
 static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_t *f_pos){
-	loff_t off;
-	loff_t nodes_skip; 
+//	loff_t off;
+//	loff_t nodes_skip; 
+	int off, nodes_skip;
 	struct hello_dev *this_dev = f->private_data;
 	int min, i;
 	struct hello_node *pnode = &(this_dev->root);
@@ -214,8 +216,8 @@ static ssize_t hello_write(struct file *f, const char __user *u, size_t s, loff_
 	}
 	if(*f_pos > this_dev->size)
 		return -EFBIG;
-	off = *f_pos % HELLO_NODE_SIZE;
-	nodes_skip = *f_pos / HELLO_NODE_SIZE;
+	off = (int)(*f_pos) % HELLO_NODE_SIZE;
+	nodes_skip = (int)(*f_pos) / HELLO_NODE_SIZE;
 	//printk(KERN_ALERT "Offset is %lld, nodes to skip: %i", off, nodes_skip);
 	for(i=0;i<nodes_skip;i++){
 		if(pnode->next == NULL){
