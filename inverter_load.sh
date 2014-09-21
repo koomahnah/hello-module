@@ -1,6 +1,6 @@
 #!/bin/sh
-/sbin/insmod ./hello.ko $* || exit 1
-module="hello"
+/sbin/insmod ./inverter.ko $* || exit 1
+module="inverter"
 rm -f /dev/${module}[0-1]
 
 major=$(awk "\$2==\"$module\" {print \$1}" /proc/devices)
