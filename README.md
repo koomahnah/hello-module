@@ -1,3 +1,3 @@
 Inverting module
 --------------
-Put data in /dev/hello0 or /dev/hello1. Get it at back at /dev/hello0 or - inverted - at /dev/hello1.
+Put data in /dev/inverter0. Get it at back at /dev/inverter0 or - inverted - at /dev/inverter1. Can also be used to fill RAM.
