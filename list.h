@@ -1,4 +1,4 @@
-#define INVERTER_NODE_SIZE	1016
+#define INVERTER_NODE_SIZE	1008
 
 struct list_node{
 	char data[INVERTER_NODE_SIZE];
